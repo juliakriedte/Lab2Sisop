@@ -1,0 +1,7 @@
+cd /workspaces/Lab2Sisop
+cat > .gitignore << 'EOF'
+buildroot-2025.02.16/output/
+buildroot-2025.02.16/dl/
+*.o
+*.ko
+EOF
