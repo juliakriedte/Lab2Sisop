@@ -1,7 +1,25 @@
-cd /workspaces/Lab2Sisop
-cat > .gitignore << 'EOF'
+# Buildroot (gigantes e regenerados)
 buildroot-2025.02.16/output/
 buildroot-2025.02.16/dl/
+buildroot-2025.02.16.tar.gz
+
+# Binários e objetos
 *.o
 *.ko
-EOF
+*.mod
+*.mod.c
+*.cmd
+modules.order
+Module.symvers
+.tmp_versions/
+
+# Binários dos apps instalados no overlay
+buildroot-2025.02.16/overlay/usr/bin/
+
+# Gerado pelo pre-build.sh (tem o IP de cada máquina)
+buildroot-2025.02.16/overlay/etc/init.d/S41network-config
+
+# Disco de testes e rastreamentos binários
+*.bin
+trace.dat
+trace.dat.*
