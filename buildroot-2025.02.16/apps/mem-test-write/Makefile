@@ -14,7 +14,7 @@ CC      = $(TRIPLET)-gcc
 default: $(OVERLAY)/$(INSTALL_PATH)/$(TARGET)
 
 $(OVERLAY)/$(INSTALL_PATH)/$(TARGET): $(OVERLAY)/$(INSTALL_PATH) $(TARGET).c
-	@$(CC) $(TARGET).c -o $@ -O2
+	@$(CC) $(TARGET).c -o $@ -O0
 
 $(OVERLAY)/$(INSTALL_PATH):
 	@mkdir -p $@
