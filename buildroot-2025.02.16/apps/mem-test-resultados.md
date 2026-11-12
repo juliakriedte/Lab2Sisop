@@ -1,7 +1,5 @@
 # Laboratório 4.1 - Resultados
 
-Ambiente: Buildroot + QEMU (i386), kernel 6.12.27, 128 MB de RAM.
-
 ## Saída com swap
 
 ### Ativação do swap
