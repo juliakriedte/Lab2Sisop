@@ -5,3 +5,4 @@ cat $BASE_DIR/../custom-scripts/network-config | sed 's/\[IP-DO-HOST\]/'"$HOST"'
 chmod +x $BASE_DIR/../overlay/etc/init.d/S41network-config
 make -C $BASE_DIR/../apps/banner
 make -C $BASE_DIR/../modules/sstf
+make -C $BASE_DIR/../apps/disk-test

@@ -6,6 +6,7 @@
 #include <linux/hrtimer.h>
 #include <linux/ktime.h>
 #include <linux/slab.h>
+#include <linux/math64.h>
 
 #include "elevator.h"
 
@@ -16,6 +17,10 @@ MODULE_PARM_DESC(queue_size, "Tamanho da fila de requisicoes antes do despacho a
 static int max_wait_ms = 50;
 module_param(max_wait_ms, int, 0444);
 MODULE_PARM_DESC(max_wait_ms, "Tempo maximo de espera em ms antes do despacho de uma fila nao cheia");
+
+static unsigned int deadline_ms = 0;
+module_param(deadline_ms, uint, 0444);
+MODULE_PARM_DESC(deadline_ms, "Prazo maximo de atendimento em ms desde a chegada (0 = desabilitado, SSTF puro)");
 
 struct sstf_data {
 	struct list_head queue;
@@ -37,7 +42,7 @@ static enum hrtimer_restart sstf_timer_fn(struct hrtimer *timer)
 	spin_lock_irqsave(&sd->lock, flags);
 	if (!sd->dispatching && sd->count > 0) {
 		sd->dispatching = true;
-		trace_printk("sstf: despacho iniciado (tempo de espera esgotado), %u requisicoes pendentes\n",
+		trace_printk("sstf: inicio de despacho motivo=tempo_esgotado pendentes=%u\n",
 			     sd->count);
 		start_dispatch = true;
 	}
@@ -61,6 +66,12 @@ static void sstf_insert_requests(struct blk_mq_hw_ctx *hctx, struct list_head *l
 
 	sd->hctx = hctx;
 
+	/*
+	 * Todas as requisicoes vao para o FIM da fila unica, inclusive as
+	 * marcadas com BLK_MQ_INSERT_AT_HEAD: assim a primeira da lista e
+	 * sempre a mais antiga, que e a que o prazo verifica no despacho.
+	 * fifo_time (u64) guarda o instante de chegada em ns.
+	 */
 	while (!list_empty(list)) {
 		struct request *rq = list_first_entry(list, struct request, queuelist);
 
@@ -73,7 +84,7 @@ static void sstf_insert_requests(struct blk_mq_hw_ctx *hctx, struct list_head *l
 	if (!sd->dispatching) {
 		if (sd->count >= queue_size) {
 			sd->dispatching = true;
-			trace_printk("sstf: despacho iniciado (fila cheia), %u requisicoes pendentes\n",
+			trace_printk("sstf: inicio de despacho motivo=fila_cheia pendentes=%u\n",
 				     sd->count);
 			start_dispatch = true;
 		} else {
@@ -87,11 +98,63 @@ static void sstf_insert_requests(struct blk_mq_hw_ctx *hctx, struct list_head *l
 		blk_mq_run_hw_queue(hctx, true);
 }
 
+/*
+ * Escolha do SSTF: percorre a fila e devolve a requisicao cujo setor inicial
+ * esta mais perto do cabecote, em qualquer sentido. No empate de distancia
+ * fica a de menor setor; no mesmo setor fica a mais antiga (a primeira vista,
+ * porque so troca com '<' estrito). Chamar com sd->lock e a fila nao vazia.
+ */
+static struct request *sstf_closest(struct sstf_data *sd)
+{
+	struct request *rq, *best = NULL;
+	sector_t best_dist = 0, best_pos = 0;
+
+	list_for_each_entry(rq, &sd->queue, queuelist) {
+		sector_t pos = blk_rq_pos(rq);
+		sector_t dist = pos >= sd->head_pos ? pos - sd->head_pos
+						    : sd->head_pos - pos;
+
+		if (!best || dist < best_dist ||
+		    (dist == best_dist && pos < best_pos)) {
+			best = rq;
+			best_dist = dist;
+			best_pos = pos;
+		}
+	}
+
+	return best;
+}
+
+/*
+ * Prazo: a requisicao mais antiga e sempre a primeira da fila. Se ela ja
+ * esperou MAIS que deadline_ms, devolve ela e o tempo de espera em *waited_ns;
+ * senao devolve NULL. Com deadline_ms = 0 o prazo esta desabilitado.
+ * Chamar com sd->lock e a fila nao vazia.
+ */
+static struct request *sstf_expired(struct sstf_data *sd, u64 *waited_ns)
+{
+	struct request *oldest;
+	u64 waited;
+
+	if (deadline_ms == 0)
+		return NULL;
+
+	oldest = list_first_entry(&sd->queue, struct request, queuelist);
+	waited = ktime_get_ns() - oldest->fifo_time;
+
+	if (waited <= (u64)deadline_ms * NSEC_PER_MSEC)
+		return NULL;
+
+	*waited_ns = waited;
+	return oldest;
+}
+
 static struct request *sstf_dispatch_request(struct blk_mq_hw_ctx *hctx)
 {
 	struct sstf_data *sd = hctx->queue->elevator->elevator_data;
 	unsigned long flags;
 	struct request *rq;
+	u64 waited_ns = 0;
 
 	spin_lock_irqsave(&sd->lock, flags);
 
@@ -101,12 +164,20 @@ static struct request *sstf_dispatch_request(struct blk_mq_hw_ctx *hctx)
 		return NULL;
 	}
 
-	/* despacho provisorio em FIFO; a escolha por SSTF e o prazo maximo
-	 * entram aqui, substituindo as duas linhas abaixo */
-	rq = list_first_entry(&sd->queue, struct request, queuelist);
+	/* o prazo expirado tem prioridade sobre a escolha do SSTF */
+	rq = sstf_expired(sd, &waited_ns);
+	if (rq) {
+		/* div_u64: dividir u64 com '/' no i386 nao linka (__udivdi3) */
+		trace_printk("sstf: prazo expirado setor=%llu espera_ms=%llu\n",
+			     (unsigned long long)blk_rq_pos(rq),
+			     (unsigned long long)div_u64(waited_ns, NSEC_PER_MSEC));
+	} else {
+		rq = sstf_closest(sd);
+	}
 
 	list_del_init(&rq->queuelist);
 	sd->count--;
+	/* o cabecote vai para o setor inicial da despachada, mesmo por prazo */
 	sd->head_pos = blk_rq_pos(rq);
 
 	if (sd->count == 0)
