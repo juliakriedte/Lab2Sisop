@@ -28,3 +28,4 @@ make -C $BASE_DIR/../apps/mem-test-ulimit
 make -C $BASE_DIR/../apps/segments-address
 make -C $BASE_DIR/../apps/segments-symbols
 make -C $BASE_DIR/../apps/paging-test
+make -C $BASE_DIR/../modules/segments
