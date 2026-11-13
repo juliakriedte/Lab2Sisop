@@ -1,0 +1,1 @@
+savedcmd_/workspaces/T2-LabSisop/buildroot-2025.02.16/modules/sstf/Module.symvers :=  scripts/mod/modpost -M        -o /workspaces/T2-LabSisop/buildroot-2025.02.16/modules/sstf/Module.symvers -T /workspaces/T2-LabSisop/buildroot-2025.02.16/modules/sstf/modules.order -i Module.symvers -e 

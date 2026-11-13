@@ -1,0 +1,1 @@
+savedcmd_/workspaces/T2-LabSisop/buildroot-2025.02.16/modules/sstf/sstf.mod := printf '%s\n'   sstf.o | awk '!x[$$0]++ { print("/workspaces/T2-LabSisop/buildroot-2025.02.16/modules/sstf/"$$0) }' > /workspaces/T2-LabSisop/buildroot-2025.02.16/modules/sstf/sstf.mod
